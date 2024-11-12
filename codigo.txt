@@ -4,7 +4,7 @@
 #include <Encoder.h>
 #include <Servo.h>
 #include "HX711.h"  // Biblioteca para célula de carga
-
+//
 // Configuração do display LCD e encoder
 LiquidCrystal_I2C lcd(0x27, 16, 2);
 #define ENCODER_CLK 13
