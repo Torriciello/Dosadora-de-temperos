@@ -1,0 +1,180 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Encoder.h>
+#include <Servo.h>
+#include "HX711.h"  // Biblioteca para célula de carga
+
+// Configuração do display LCD e encoder
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+#define ENCODER_CLK 13
+#define ENCODER_DT 11
+#define ENCODER_SW 12
+Encoder encoder(ENCODER_CLK, ENCODER_DT);
+
+// Define o pino do servo, do botão e do buzzer
+const int servoPin = 5;
+const int buttonPin = 9;
+const int buzzerPin = 8;  // Pino do buzzer
+
+// Cria o objeto servo
+Servo myServo;
+
+// Variável para armazenar o estado do botão
+int buttonState = 0;
+
+// Variável para rastrear a posição do servo
+bool isServoAt180 = false;
+
+// Configuração dos motores e da célula de carga
+#define MOTOR_PASSO_PIN 2       // Pin do motor de passo
+#define MOTOR_DC_PIN 3          // Pin do motor DC
+#define CELULA_CARGA_DT_PIN 6   // Pino de dados da célula de carga
+#define CELULA_CARGA_CLK_PIN 7  // Pino de clock da célula de carga
+
+HX711 scale;  // Objeto HX711
+
+int peso = 0;
+int pesoAnterior = 0;
+unsigned long ultimaAtualizacao = 0;
+const int intervaloAtualizacao = 300;
+const int pesoMaximo = 5000;  // Limite de 5000g (exemplo)
+int pesoSelecionado = 0;      // Armazena o peso selecionado
+
+enum Modo { SELECAO, DOSANDO };
+Modo modoAtual = SELECAO;
+
+bool botaoPressionado = false;
+
+void setup() {
+  lcd.init();
+  lcd.setBacklight(HIGH);
+  pinMode(ENCODER_SW, INPUT_PULLUP);
+  pinMode(MOTOR_PASSO_PIN, OUTPUT);
+  pinMode(MOTOR_DC_PIN, OUTPUT);
+  pinMode(CELULA_CARGA_DT_PIN, INPUT);
+  pinMode(CELULA_CARGA_CLK_PIN, OUTPUT);
+  pinMode(buzzerPin, OUTPUT);  // Configura o pino do buzzer como saída
+
+  lcd.setCursor(0, 0);
+  lcd.print("Dosadora");
+  lcd.setCursor(0, 1);
+  lcd.print("Selecione peso");
+
+  // Configura o pino do botão como entrada
+  pinMode(buttonPin, INPUT);
+
+  // Anexa o servo ao pino
+  myServo.attach(servoPin);
+
+  // Define a posição inicial do servo para 0 graus
+  myServo.write(0);
+
+  // Inicializa a célula de carga
+  scale.begin(CELULA_CARGA_DT_PIN, CELULA_CARGA_CLK_PIN);
+  scale.set_scale(2280.f);  // Defina o valor de calibração da célula de carga
+  scale.tare();  // Zera a balança
+}
+
+void loop() {
+  long novaPosicao = encoder.read();
+
+  // Modo de seleção de peso com o encoder
+  if (modoAtual == SELECAO) {
+    // Atualiza o peso em incrementos de 10 gramas
+    if (novaPosicao > pesoAnterior) {
+      peso += 10;
+      if (peso > pesoMaximo) peso = pesoMaximo;
+      pesoAnterior = novaPosicao;
+    } else if (novaPosicao < pesoAnterior) {
+      peso -= 10;
+      if (peso < 0) peso = 0;
+      pesoAnterior = novaPosicao;
+    }
+
+    // Atualiza o display com o peso selecionado a cada intervalo
+    if (millis() - ultimaAtualizacao >= intervaloAtualizacao) {
+      ultimaAtualizacao = millis();
+      lcd.setCursor(0, 1);
+      lcd.print("Peso: ");
+      lcd.print(peso);
+      lcd.print(" g   "); // Espaço extra para apagar dígitos antigos
+    }
+
+    // Confirma o peso selecionado ao pressionar o botão do encoder
+    if (digitalRead(ENCODER_SW) == LOW && !botaoPressionado) {
+      botaoPressionado = true;
+      pesoSelecionado = peso;    // Salva o peso selecionado
+      modoAtual = DOSANDO;       // Muda para o modo de dosagem
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Dosando...");
+      delay(200);                // Evita múltiplas leituras
+    }
+    
+    if (digitalRead(ENCODER_SW) == HIGH) {
+      botaoPressionado = false;
+    }
+  }
+
+  // Modo de dosagem automática
+  if (modoAtual == DOSANDO) {
+    // Liga os motores para iniciar a dosagem
+    digitalWrite(MOTOR_PASSO_PIN, HIGH);
+    digitalWrite(MOTOR_DC_PIN, HIGH);
+
+    // Lê o valor da célula de carga
+    long pesoAtual = scale.get_units(10);  // Obtém o valor médio de 10 leituras
+
+    // Verifica se o peso atual atingiu o peso selecionado
+    if (pesoAtual >= pesoSelecionado) {
+      // Desliga os motores ao alcançar o peso
+      digitalWrite(MOTOR_PASSO_PIN, LOW);
+      digitalWrite(MOTOR_DC_PIN, LOW);
+
+      // Exibe a confirmação de peso atingido
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Peso Alcançado:");
+      lcd.setCursor(0, 1);
+      lcd.print(pesoAtual);
+      lcd.print(" g   ");
+      
+      // Aciona o buzzer por 1 segundo
+      digitalWrite(buzzerPin, HIGH);
+      delay(1000);  // Mantém o buzzer ligado por 1 segundo
+      digitalWrite(buzzerPin, LOW);
+
+      delay(2000);  // Pausa antes de retornar ao modo de seleção
+
+      // Reseta para o modo de seleção para uma nova dosagem
+      encoder.write(0);
+      peso = 0;
+      modoAtual = SELECAO;
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Dosadora");
+      lcd.setCursor(0, 1);
+      lcd.print("Selecione peso");
+    }
+  }
+
+  buttonState = digitalRead(buttonPin);
+
+  // Se o botão for pressionado
+  if (buttonState == HIGH) {
+    if (isServoAt180) {
+      // Move o servo para 0 graus
+      myServo.write(0);
+      isServoAt180 = false;
+    } else {
+      // Move o servo para 180 graus
+      myServo.write(180);
+      isServoAt180 = true;
+    }
+
+    // Aguarda o botão ser solto para evitar múltiplos acionamentos
+    while (digitalRead(buttonPin) == HIGH);
+    delay(10); // Delay para debounce do botão
+  }
+}
