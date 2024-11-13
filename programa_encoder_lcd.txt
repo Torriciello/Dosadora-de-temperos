@@ -1,0 +1,76 @@
+#include <Arduino.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <Encoder.h>
+
+// Inicializa o display no endereço 0x27
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Pinos do encoder
+#define ENCODER_CLK 13
+#define ENCODER_DT 11
+#define ENCODER_SW 12 // Botão de confirmação do encoder
+
+Encoder encoder(ENCODER_CLK, ENCODER_DT);
+
+// Variável para armazenar o peso
+int peso = 0;
+
+// Variáveis para controlar o clique e a confirmação
+unsigned long tempoPressionado = 0;
+const unsigned long tempoConfirmacao = 5000; // 5 segundos para confirmar
+
+// Declaração dos protótipos das funções
+void exibirPeso();
+void confirmarPeso();
+
+void setup() {
+  lcd.init(); // Inicializa o display LCD
+  lcd.setBacklight(HIGH); // Liga o backlight do LCD
+  pinMode(ENCODER_SW, INPUT_PULLUP); // Configura o botão do encoder como entrada com pull-up
+}
+
+void loop() {
+  // Detecta clique para adicionar 100 gramas
+  if (digitalRead(ENCODER_SW) == LOW) { // Se o botão do encoder é pressionado
+    if (tempoPressionado == 0) {
+      tempoPressionado = millis(); // Inicia o temporizador de clique
+    } else if (millis() - tempoPressionado >= tempoConfirmacao) {
+      // Se o botão foi pressionado e segurado por 5 segundos
+      confirmarPeso();
+      tempoPressionado = 0; // Reseta o temporizador
+    }
+  } else {
+    if (tempoPressionado > 0 && millis() - tempoPressionado < tempoConfirmacao) {
+      // Incrementa 100 gramas se o botão foi pressionado rapidamente
+      peso += 100;
+      exibirPeso();
+    }
+    tempoPressionado = 0; // Reseta o temporizador quando o botão é solto
+  }
+
+  delay(100); // Pequeno atraso para evitar leituras rápidas demais
+}
+
+void exibirPeso() {
+  // Atualiza o display com o peso atual
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Dosadora");
+  lcd.setCursor(0, 1);
+  lcd.print("Peso: ");
+  lcd.print(peso);
+  lcd.print(" g");
+}
+
+void confirmarPeso() {
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Peso confirmado:");
+  lcd.setCursor(0, 1);
+  lcd.print(peso);
+  lcd.print(" g");
+  delay(2000); // Mostra a confirmação por 2 segundos
+  peso = 0; // Reseta o peso para uma nova seleção
+  exibirPeso(); // Exibe o peso zerado
+}
