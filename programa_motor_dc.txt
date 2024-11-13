@@ -1,0 +1,11 @@
+#include <Arduino.h>
+
+#define GPIO_MOTOR_DC 4
+
+void setup() {
+  pinMode(GPIO_MOTOR_DC, OUTPUT); 
+}
+
+void loop() {
+digitalWrite(GPIO_MOTOR_DC, HIGH);
+}
