@@ -1,0 +1,26 @@
+#include <Arduino.h>
+#include <Servo.h>
+
+#define BUTTON_PIN 9   // Pino do botão
+#define SERVO_PIN 5    // Pino do servo
+
+Servo servoMotor;
+
+void setup() {
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // Configura o botão como entrada com pull-up interno
+  servoMotor.attach(SERVO_PIN);      // Conecta o servo no pino especificado
+  servoMotor.write(0);               // Define o servo para a posição inicial (0 graus)
+}
+
+void loop() {
+  // Verifica o estado do botão
+  if (digitalRead(BUTTON_PIN) == LOW) {
+    // Se o botão estiver pressionado, gira o servo para 180 graus
+    servoMotor.write(180);
+  } else {
+    // Se o botão não estiver pressionado, retorna o servo para 0 graus
+    servoMotor.write(0);
+  }
+
+  delay(10); // Pequeno delay para estabilidade na leitura do botão
+}
