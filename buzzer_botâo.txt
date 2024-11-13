@@ -1,0 +1,23 @@
+#include <Arduino.h>
+
+#define BUTTON_PIN 9   // Pino do botão
+#define BUZZER_PIN 8    // Pino do buzzer
+
+void setup() {
+  pinMode(BUTTON_PIN, INPUT_PULLUP); // Configura o botão com resistor de pull-up interno
+  pinMode(BUZZER_PIN, OUTPUT);       // Configura o buzzer como saída
+  digitalWrite(BUZZER_PIN, LOW);     // Garante que o buzzer começa desligado
+}
+
+void loop() {
+  int buttonState = digitalRead(BUTTON_PIN); // Lê o estado do botão
+
+  // Verifica se o botão foi pressionado (estado LOW com pull-up)
+  if (buttonState == LOW) {
+    digitalWrite(BUZZER_PIN, HIGH); // Liga o buzzer
+  } else {
+    digitalWrite(BUZZER_PIN, LOW);  // Desliga o buzzer
+  }
+
+  delay(10); // Pequeno delay para estabilizar a leitura do botão
+}
