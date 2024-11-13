@@ -1,0 +1,23 @@
+#include <Arduino.h>
+
+// Definição dos pinos
+const int dirPin = 2;     // Pino de direção
+const int stepPin = 3;    // Pino de passo (step)
+const int stepDelay = 500; // Intervalo entre passos (em microssegundos)
+
+void setup() {
+  // Defina os pinos como saídas
+  pinMode(stepPin, OUTPUT);
+  pinMode(dirPin, OUTPUT);
+  
+  // Defina a direção inicial (HIGH ou LOW)
+  digitalWrite(dirPin, HIGH); // Defina como HIGH para girar em uma direção, LOW para a direção oposta
+}
+
+void loop() {
+  // Gira o motor continuamente
+  digitalWrite(stepPin, HIGH);
+  delayMicroseconds(stepDelay); // Aguarde o intervalo entre os pulsos
+  digitalWrite(stepPin, LOW);
+  delayMicroseconds(stepDelay); // Aguarde o intervalo entre os pulsos
+}
