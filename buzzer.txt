@@ -1,0 +1,17 @@
+#include <Arduino.h>
+
+
+#define GPIO_BUZZER 8
+
+void setup() {
+  pinMode(GPIO_BUZZER, OUTPUT);
+
+}
+
+
+void loop() {
+digitalWrite(GPIO_BUZZER, HIGH);
+delay(1000);
+digitalWrite(GPIO_BUZZER, LOW);
+
+}
