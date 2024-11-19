@@ -1,0 +1,200 @@
+#include "HX711.h" // Biblioteca HX711
+#include <Servo.h>
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h> // Biblioteca para LCD I2C
+#include <Encoder.h>           // Biblioteca para encoder rotativo
+
+#define DOUT  7                 // HX711 DATA OUT = pino A0 do Arduino
+#define CLK   6                 // HX711 SCK IN = pino A1 do Arduino
+#define BUZZER_PIN 8            // Pino do buzzer
+#define SERVO_PIN 5             // Pino do servo
+#define BUTTON_PIN 9            // Pino do botão
+#define BUTTON_RESTART_PIN 1    // Pino do botão para reiniciar o processo
+#define MOTOR_DC_PIN 4          // Pino do motor DC
+#define ENCODER_PIN_A 12        // Pino A do encoder
+#define ENCODER_PIN_B 13        // Pino B do encoder
+#define ENCODER_BUTTON_PIN 11   // Pino do botão do encoder
+#define MOTOR_STEP_PIN 3        // Pino do motor de passo
+#define MOTOR_DIR_PIN 2         // Pino de direção do motor de passo
+#define MOTOR_STEP_ENABLE_PIN  10  // Pino de enable para o motor de passo
+
+Servo servoMotor;
+HX711 balanca;
+Encoder encoder(ENCODER_PIN_A, ENCODER_PIN_B);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Endereço do LCD pode variar, verifique o seu
+
+float calibration_factor = -82290;
+float peso = 0;
+int pesoSelecionado = 100;       // Peso inicial selecionado em 100g
+bool modoAutomatico = true;      // Modo de operação inicial (true = Automático, false = Manual)
+const int pesosDisponiveis[] = {100, 200, 300, 400, 500}; // Pesos possíveis para seleção
+int indicePeso = 0; // Índice para os pesos disponíveis
+byte servo = 0; 
+enum MenuState { INICIAL, SELECIONA_PESO, SELECIONA_MODO };
+MenuState estadoMenu = INICIAL;
+void zeraBalanca();
+
+void setup() {
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(MOTOR_DC_PIN, OUTPUT);
+  pinMode(ENCODER_BUTTON_PIN, INPUT_PULLUP);
+  pinMode(MOTOR_STEP_PIN, OUTPUT);
+  pinMode(MOTOR_DIR_PIN, OUTPUT);
+  pinMode(MOTOR_STEP_ENABLE_PIN, OUTPUT);
+  pinMode(BUTTON_RESTART_PIN, INPUT_PULLUP); // Botão para reiniciar o processo
+
+  servoMotor.attach(SERVO_PIN);
+  servoMotor.write(0);
+
+  digitalWrite(MOTOR_STEP_ENABLE_PIN, HIGH); // Desliga o motor de passo no início
+
+  Serial.begin(9600);
+  balanca.begin(DOUT, CLK);
+  balanca.set_scale();
+  zeraBalanca();
+
+  lcd.begin(16, 2);
+  lcd.init();
+  lcd.backlight();
+
+  lcd.setCursor(0, 0);
+  lcd.print("Iniciando");
+  lcd.setCursor(0, 1);
+  lcd.print("a maquina...");
+  delay(5000);
+  lcd.clear();
+
+  estadoMenu = SELECIONA_PESO; // Muda para o próximo estado do menu
+}
+
+void zeraBalanca() {
+  balanca.tare();
+}
+
+void loop() {
+  balanca.set_scale(calibration_factor);
+  peso = balanca.get_units();
+  if(peso < 0) { peso = 0; }
+
+  // Verificar se o botão de reinício foi pressionado
+  if (digitalRead(BUTTON_RESTART_PIN) == LOW) {
+    delay(200); // Debounce do botão
+    estadoMenu = SELECIONA_PESO;
+    zeraBalanca();
+    lcd.clear();
+    return;
+  }
+
+  switch (estadoMenu) {
+    case SELECIONA_PESO:
+      lcd.setCursor(0, 0);
+      lcd.print("Peso: ");
+      lcd.print(pesoSelecionado);
+      lcd.print("g  ");
+     
+      if (digitalRead(ENCODER_BUTTON_PIN) == LOW) {
+        delay(200); // Debounce do botão
+        estadoMenu = SELECIONA_MODO; 
+      } else {
+        long encoderPos = encoder.read();
+        
+        // Verifica se a direção do movimento foi para a direita (aumento de peso)
+        if (encoderPos >= 4) { // Girar para a direita
+          encoder.write(0); // Reseta a posição do encoder
+          if (pesoSelecionado < 500) { // Limite máximo de 500g
+            pesoSelecionado += 100;
+          }
+        }
+        // Verifica se a direção do movimento foi para a esquerda (diminuição de peso)
+        else if (encoderPos <= -4) { // Girar para a esquerda
+          encoder.write(0); // Reseta a posição do encoder
+          if (pesoSelecionado > 100) { // Limite mínimo de 100g
+            pesoSelecionado -= 100;
+          }
+        }
+      }
+      break;
+
+    case SELECIONA_MODO:
+      lcd.setCursor(0, 0);
+      lcd.print("Modo: ");
+      lcd.setCursor(0, 1);
+      lcd.print(modoAutomatico ? "Automatico   " : "Manual       ");
+
+      if (digitalRead(ENCODER_BUTTON_PIN) == LOW) {
+        delay(200);
+        estadoMenu = INICIAL; 
+      } else {
+        long encoderPos = encoder.read();
+        
+        // Verifica se a direção do movimento foi para a direita (modo automático)
+        if (encoderPos >= 4) { // Girar para a direita
+          encoder.write(0); // Reseta a posição do encoder
+          modoAutomatico = true;
+        }
+        // Verifica se a direção do movimento foi para a esquerda (modo manual)
+        else if (encoderPos <= -4) { // Girar para a esquerda
+          encoder.write(0); // Reseta a posição do encoder
+          modoAutomatico = false;
+        }
+      }
+      break;
+
+    case INICIAL:
+      lcd.setCursor(0, 0);
+      lcd.print("Peso: ");
+      lcd.print(peso, 2);
+      lcd.print(" kg ");
+      lcd.setCursor(0, 1);
+      lcd.print("Modo:");
+      lcd.print(modoAutomatico ? "Auto       " : "Manual       ");
+     
+      if (modoAutomatico) {
+        digitalWrite(MOTOR_DC_PIN, HIGH); // Liga o motor DC
+
+        if (peso < pesoSelecionado / 1000.0 && (servo == 0 || servo == 2)) {
+          // Liga o motor de passo e executa um giro
+          digitalWrite(MOTOR_STEP_ENABLE_PIN, LOW); // Habilita motor de passo
+          for (int i = 0; i < 200; i++) { // 1 giro (assumindo 200 passos/revolução)
+            digitalWrite(MOTOR_STEP_PIN, HIGH);
+            delayMicroseconds(500);
+            digitalWrite(MOTOR_STEP_PIN, LOW);
+            delayMicroseconds(500);
+          }
+          digitalWrite(MOTOR_STEP_ENABLE_PIN, HIGH); // Desabilita motor de passo
+        } else {
+          digitalWrite(MOTOR_DC_PIN, LOW); // Desliga o motor DC
+          digitalWrite(BUZZER_PIN, LOW);
+          delay(500);
+          digitalWrite(BUZZER_PIN, LOW);
+          servo = 1;
+        }
+      } else {
+        digitalWrite(MOTOR_DC_PIN, LOW);
+      }
+      break;
+  }
+
+  // Verifica o estado do botão
+  if (digitalRead(BUTTON_PIN) == LOW && servo == 1) {
+    // Se o botão estiver pressionado, gira o servo para 180 graus
+    servoMotor.write(180);
+    delay(1000);
+
+    while((peso * 1000) > 0){
+      servoMotor.write(170);
+      delay(50);
+      servoMotor.write(180);
+      delay(50);
+      balanca.set_scale(calibration_factor);
+      peso = balanca.get_units();
+    }
+
+    servoMotor.write(0);
+    delay(1000);
+    servo = 2;
+  }
+
+  delay(10); // Pequeno delay para estabilidade na leitura do botão
+}
